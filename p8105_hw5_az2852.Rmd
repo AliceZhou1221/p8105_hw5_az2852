@@ -7,12 +7,15 @@ output: github_document
 library(tidyverse)
 library(rvest)
 library(broom)
+library(stringr)
 ```
 
 # Problem 1
 Suppose you put n people in a room, and want to know the probability that at least two people share a birthday. For simplicity, we’ll assume there are no leap years (i.e. there are only 365 days) and that birthdays are uniformly distributed over the year (which is actually not the case).
 
 ```{r}
+set.seed(123)
+
 sample = sample(1:365, size = 10, replace = TRUE)
 
 length(unique(sample)) < 10
@@ -91,10 +94,9 @@ generate_normal = function(n = 30, pop_mean, sd = 5) {
   norm_vec = rnorm(n = n, mean = pop_mean, sd = sd)
   return (norm_vec)
 }
-generate_normal(pop_mean = 6)
 
 sim_df = expand_grid(
-    iter = 1:5,
+    iter = 1:5000,
     pop_mean = c(1,2,3,4,5,6)) %>% 
     mutate(
     data = map(pop_mean, \(x) generate_normal(n = 30, x, sd = 5)),
@@ -103,40 +105,28 @@ sim_df = expand_grid(
   ) %>% 
   unnest(tidy_res) %>% 
   select(iter, pop_mean, estimate, p.value)
-
-#mean(sim_df[["data"]][[1]])
-#mean(sim_df[["data"]][[2]])
-#mean(sim_df[["data"]][[3]])
-#mean(sim_df[["data"]][[4]])
-#mean(sim_df[["data"]][[5]])
-#mean(sim_df[["data"]][[6]])
-#mean(sim_df[["data"]][[7]])
 ```
-
-```{r}
-generate_normal = function(n = 30, pop_mean, sd = 5) {
-  norm_vec = rnorm(n = n, mean = pop_mean, sd = sd)
-  return (norm_vec)
-}
-generate_normal(pop_mean = 6)
-
-sim_df =
-  expand_grid(
-    iter = 1:5000,
-    pop_mean = c(1,2,3,4,5,6)) %>% 
-    mutate(
-    data = map(pop_mean, \(x) generate_normal(n = 30, x, sd = 5)),
-    t_test_res = map(data, \(x) t.test(x, mu = 0)),
-    tidy_res = map(t_test_res, tidy)
-  ) %>% 
-  unnest(tidy_res) %>%
-  select(iter, estimate, p.value)
-```
-
-
-, and complete the following:
-
 Make a plot showing the proportion of times the null was rejected (the power of the test) on the y axis and the true value of 𝜇on the x axis. Describe the association between effect size and power.
+```{r}
+# Calculate the power (proportion of p-values < 0.05) for each true mean
+power_df = sim_df %>%
+  group_by(pop_mean) %>%
+  summarize(power = mean(p.value < 0.05))
+
+# Plot the power against the true mean (effect size)
+power_df %>%
+  ggplot(aes(x = pop_mean, y = power)) +
+  geom_line() +
+  geom_point() +
+  labs(
+    title = "Power of the One-Sample t-test vs True Mean",
+    x = "True Mean (Effect Size)",
+    y = "Power (Proportion of Null Rejected)"
+  ) +
+  theme_minimal()
+```
+Power increases as effect size increases. The increase in power is sharp at first and then gradually slows down as power gets close to 1.
+
 Make a plot showing the average estimate of 𝜇̂ 
  on the y axis and the true value of 𝜇
  on the x axis. Make a second plot (or overlay on the first) the average estimate of 𝜇̂ 
@@ -144,4 +134,114 @@ Make a plot showing the average estimate of 𝜇̂
  on the x axis. Is the sample average of 𝜇̂ 
  across tests for which the null is rejected approximately equal to the true value of 𝜇
 ? Why or why not?
+```{r}
+
+# calculate average estimates for all samples and for samples where null was rejected
+summary_df = sim_df %>%
+  group_by(pop_mean) %>%
+  summarize(
+    avg_estimate_all = mean(estimate),
+    avg_estimate_rejected = mean(estimate[p.value < 0.05])
+  )
+
+#plot average estimate against the true mean for all and rejected samples
+ggplot(summary_df, aes(x = pop_mean)) +
+  geom_line(aes(y = avg_estimate_all, color = "All Samples"), size = 1) +
+  geom_point(aes(y = avg_estimate_all, color = "All Samples")) +
+  geom_line(aes(y = avg_estimate_rejected, color = "Rejected Samples"), size = 1, linetype = "dashed") +
+  geom_point(aes(y = avg_estimate_rejected, color = "Rejected Samples")) +
+  labs(
+    title = "Average Estimate of the Mean vs True Mean",
+    x = "True Mean (mu)",
+    y = "Average Estimate (mu_hat)",
+    color = "Legend"
+  ) +
+  theme_minimal()
+
+```
+The average estimate mu_hat for which the null is rejected is not approximately equal to the true mean. Rather, the average estimates for rejected samples are higher because only samples with larger estimates (further from 0) are more likely to reject the null hypothesis.
+
+# Problem 3
+```{r}
+# load the homicide data
+homicide_raw_df = read_csv("data/homicide-data.csv", na = c("Unknown"))
+```
+
+```{r}
+# check for missing data
+sum(is.na(homicide_raw_df))
+summary(homicide_raw_df)
+```
+The original data contains 52179 rows and 12 columns. Important variables include reported data, victim's first and last name, victim_race <chr>, victim_age <chr> victim_sex <chr>, city, state, latitude and longitude, and disposition <chr>. There is a significant amount of missing data in variables victim_race, victim_age, and victim_sex.
+
+Describe the raw data. Create a city_state variable (e.g. “Baltimore, MD”) and then summarize within cities to obtain the total number of homicides and the number of unsolved homicides (those for which the disposition is “Closed without arrest” or “Open/No arrest”).
+```{r}
+homicide_df = homicide_raw_df %>%
+  mutate(city_state = str_c(city, state, sep = ", "))
+
+# Summarizing homicides within each city
+homicide_df %>%
+  group_by(city_state) %>%
+  summarize(
+    total_homicides = n(),
+    unsolved_homicides = sum(disposition %in% c("Closed without arrest", "Open/No arrest"))
+  )
+```
+For the city of Baltimore, MD, use the prop.test function to estimate the proportion of homicides that are unsolved; save the output of prop.test as an R object, apply the broom::tidy to this object and pull the estimated proportion and confidence intervals from the resulting tidy dataframe.
+```{r}
+# Subset data for Baltimore, MD
+baltimore_data = homicide_df %>%
+  filter(city_state == "Baltimore, MD")
+
+# Calculate the number of unsolved homicides and total homicides
+unsolved_baltimore = sum(baltimore_data$disposition %in% c("Closed without arrest", "Open/No arrest"))
+total_baltimore = nrow(baltimore_data)
+
+# conduct proportion test and save the result as an r object
+prop_test_baltimore = prop.test(unsolved_baltimore, total_baltimore)
+
+# Tidy the result & extract estimated proportion and CI
+tidy(prop_test_baltimore) %>% 
+  select(estimate, conf.low, conf.high)
+```
+run prop.test for each of the cities in your dataset, and extract both the proportion of unsolved homicides and the confidence interval for each. Do this within a “tidy” pipeline, making use of purrr::map, purrr::map2, list columns and unnest as necessary to create a tidy dataframe with estimated proportions and CIs for each city.
+```{r}
+# For each city, calculate the number of unsolved homicides and total homicides
+results_df = 
+homicide_df %>%
+  group_by(city_state) %>%
+  summarize(
+    total_homicides = n(),
+    unsolved_homicides = sum(disposition %in% c("Closed without arrest", "Open/No arrest"))
+  ) %>%
+  mutate(
+    prop_test_res = map2(unsolved_homicides, total_homicides, ~prop.test(.x, .y)),
+    tidy_res = map(prop_test_res, tidy)
+  ) %>%
+  unnest(tidy_res) %>%
+  select(city_state, estimate, conf.low, conf.high)
+
+```
+Create a plot that shows the estimates and CIs for each city – check out geom_errorbar for a way to add error bars based on the upper and lower limits. Organize cities according to the proportion of unsolved homicides.
+```{r}
+ggplot(results_df, aes(x = reorder(city_state, estimate), y = estimate)) +
+  geom_point(color = "blue", size = 2) +  # Plot the estimated proportion as points
+  geom_errorbar(aes(ymin = conf.low, ymax = conf.high), width = 0.2) +  # Add error bars (confidence intervals)
+  labs(
+    x = "City",
+    y = "Estimated Proportion of Unsolved Homicides",
+    title = "Estimated Proportion of Unsolved Homicides with 95% CI"
+  ) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +  # Rotate x-axis labels for readability
+  coord_flip()  # Flip the coordinates for better visibility of city names
+
+ggsave("homicide_plot.png", height = 8, width = 8, units = "in")
+```
+```{r}
+#checking why Tulsa, AL has estimated proportion of 0
+homicide_df %>% 
+  filter(city_state == "Tulsa, AL") %>% 
+  filter(!disposition %in% c("Closed without arrest", "Open/No arrest"))
+```
+There is only one entry for Tulsa, AL, causing the estimate to be 0.
 
