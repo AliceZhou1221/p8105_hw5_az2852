@@ -130,7 +130,7 @@ power_df %>%
   theme_minimal()
 ```
 
-Power increases as effect size increases. The increase in power is sharp at first as true mean increases and then slows down as power gets close to 1.
+Power increases as effect size (true mean mu) increases. When the true mean is close to 0, the power is low (close to the significance level of 0.05). As true mean increases, power approaches 1. The increase in power appears to be sharp at first and then slows down as power gets close to 1.
 
 Make a plot showing the average estimate of 𝜇̂ on the y axis and the true value of 𝜇on the x axis. Make a second plot (or overlay on the first) the average estimate of 𝜇̂ only in samples for which the null was rejected on the y axis and the true value of 𝜇on the x axis. Is the sample average of 𝜇̂ across tests for which the null is rejected approximately equal to the true value of 𝜇? Why or why not?
 ```{r}
@@ -172,9 +172,9 @@ homicide_raw_df = read_csv("data/homicide-data.csv", na = c("Unknown"))
 sum(is.na(homicide_raw_df))
 summary(homicide_raw_df)
 ```
-The original data contains 52179 rows and 12 columns. Important variables include reported data, victim's first and last name, victim_race <chr>, victim_age <chr> victim_sex <chr>, city, state, latitude and longitude, and disposition <chr>. There is a significant amount of missing data in variables victim_race, victim_age, and victim_sex.
+The original data contains 52179 rows and 12 columns. Important variables include reported date (dbl), victim's first and last name (chr), victim_race (chr), victim_age (dbl), victim_sex (chr), city (chr), state (chr), latitude and longitude (dbl), and disposition (chr). There is a considerable amount of data missing in the columns of victim name, race, age, and sex, especially for cities Dallas, Los Angeles, and Sacramento.
 
-Create a city_state variable (e.g. “Baltimore, MD”) and then summarize within cities to obtain the total number of homicides and the number of unsolved homicides (those for which the disposition is “Closed without arrest” or “Open/No arrest”).
+#### Create a city_state variable (e.g. “Baltimore, MD”) and then summarize within cities to obtain the total number of homicides and the number of unsolved homicides (those for which the disposition is “Closed without arrest” or “Open/No arrest”).
 ```{r}
 #create a city_state variable
 homicide_df = homicide_raw_df %>%
@@ -188,14 +188,18 @@ homicide_df %>%
     unsolved_homicides = sum(disposition %in% c("Closed without arrest", "Open/No arrest"))
   )
 ```
-For the city of Baltimore, MD, use the prop.test function to estimate the proportion of homicides that are unsolved; save the output of prop.test as an R object, apply the broom::tidy to this object and pull the estimated proportion and confidence intervals from the resulting tidy dataframe.
+
+#### For the city of Baltimore, MD, use the prop.test function to estimate the proportion of homicides that are unsolved; save the output of prop.test as an R object, apply the broom::tidy to this object and pull the estimated proportion and confidence intervals from the resulting tidy dataframe.
 ```{r}
 # Subset data for Baltimore, MD
 baltimore_data = homicide_df %>%
   filter(city_state == "Baltimore, MD")
 
 # Calculate the number of unsolved homicides and total homicides
-unsolved_baltimore = sum(baltimore_data$disposition %in% c("Closed without arrest", "Open/No arrest"))
+unsolved_baltimore = baltimore_data %>% 
+  filter(disposition %in% c("Closed without arrest", "Open/No arrest")) %>%
+  nrow()
+
 total_baltimore = nrow(baltimore_data)
 
 # conduct proportion test and save the result as an r object
@@ -205,9 +209,9 @@ prop_test_baltimore = prop.test(unsolved_baltimore, total_baltimore)
 tidy(prop_test_baltimore) %>% 
   select(estimate, conf.low, conf.high)
 ```
-Run prop.test for each of the cities in your dataset, and extract both the proportion of unsolved homicides and the confidence interval for each. Do this within a “tidy” pipeline, making use of purrr::map, purrr::map2, list columns and unnest as necessary to create a tidy dataframe with estimated proportions and CIs for each city.
+#### Run prop.test for each of the cities in your dataset, and extract both the proportion of unsolved homicides and the confidence interval for each. Do this within a “tidy” pipeline, making use of purrr::map, purrr::map2, list columns and unnest as necessary to create a tidy dataframe with estimated proportions and CIs for each city.
 ```{r}
-# For each city, calculate the number of unsolved homicides and total homicides
+# For each city, calculate the number of unsolved homicides and total homicides, conduct proportion test, and extract estimated proportions and CIs
 results_df = 
 homicide_df %>%
   group_by(city_state) %>%
@@ -224,7 +228,8 @@ homicide_df %>%
 
 results_df
 ```
-Create a plot that shows the estimates and CIs for each city – check out geom_errorbar for a way to add error bars based on the upper and lower limits. Organize cities according to the proportion of unsolved homicides.
+
+#### Create a plot that shows the estimates and CIs for each city – check out geom_errorbar for a way to add error bars based on the upper and lower limits. Organize cities according to the proportion of unsolved homicides.
 ```{r fig.height=8, fig.width=8}
 ggplot(results_df, aes(x = reorder(city_state, estimate), y = estimate)) +
   geom_point(color = "blue", size = 2) +  
